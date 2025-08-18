@@ -1,6 +1,12 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
 #include "assembler.h"
 #include "preprocess.h"
+#include "hashtable.h"
+#include "first_pass.h"
+#include "second_pass.h"
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -9,14 +15,33 @@ int main(int argc, char* argv[]) {
     }
 
     preprocessFile(argv[1], "pre.asm");
+    printf("Successfully preprocessed file\n");
 
-    printf("Successfully preprocessed file");
+    struct hashTable symbolTable;
+    initializeHashTable(&symbolTable);
 
-    int PC = 0;
+    FILE* preprocessed = fopen("pre.asm", "r");
+    if (preprocessed == NULL) {
+        fprintf(stderr, "Could not open pre.asm for reading.\n");
+        exit(EXIT_FAILURE);
+    }
 
-    // read pre.asm line by line
-    // for each line
-    
+    firstPass(preprocessed, &symbolTable);
+    fclose(preprocessed);
 
-    exit(EXIT_SUCCESS);
+    preprocessed = fopen("pre.asm", "r");
+    FILE* output = fopen("output.bin", "wb");
+    if (output == NULL) {
+        fprintf(stderr, "Error: could not open output.bin for writing.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    secondPass(preprocessed, output, &symbolTable);
+
+    fclose(preprocessed);
+    fclose(output);
+
+    freeHashTable(&symbolTable);
+
+    return EXIT_SUCCESS;
 }

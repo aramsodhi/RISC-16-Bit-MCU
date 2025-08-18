@@ -6,65 +6,64 @@
 
 // remove comments and whitespace from a line of assmebly
 void preprocessString(char* str) {
-    // edge case for empty or NULL strings
+    // Edge case: Null or empty string
     if (str == NULL || *str == '\0') {
         return;
     }
 
-    // replace '#' character with a null terminator to get rid of comments
+    // Remove comments (everything after '#')
     char* commentAddress = strchr(str, '#');
-
     if (commentAddress != NULL) {
         *commentAddress = '\0';
     }
 
-    // track index of non-whitespace character
+    // Trim trailing whitespace
     int lastCharIndex = strlen(str) - 1;
-
-    // iterate backward while updating lastCharIndex
-    while (lastCharIndex >= 0 && isspace((unsigned char) str[lastCharIndex])) {
+    while (lastCharIndex >= 0 && isspace((unsigned char)str[lastCharIndex])) {
         lastCharIndex--;
     }
+    str[lastCharIndex + 1] = '\0'; // Null-terminate after the last non-whitespace character
 
-    // place null terminater after last non-whitespace char
-    str[lastCharIndex + 1] = '\0';
-
-
-    // index of first non-whitespace char
+    // Trim leading whitespace
     int i = 0;
-    while(str[i] != '\0' && (str[i] == ' ' || str[i] == '\t' || str[i] == '\n' || str[i] == '\r')) {
+    while (str[i] != '\0' && isspace((unsigned char)str[i])) {
         i++;
     }
 
-    // if all chars are whitespace or string is empty. set to empty string
+    // If the string is empty after trimming, set it to an empty string
     if (str[i] == '\0') {
         str[0] = '\0';
         return;
     }
 
-    // shift characters
+    // Shift characters to remove leading whitespace
     int j = 0;
     while (str[i] != '\0') {
         str[j++] = str[i++];
     }
-
-    // null terminate the string
-    str[j] = '\0';
+    str[j] = '\0'; // Null-terminate the string
 }
 
 void preprocessFile(char* _source, char* _dest) {
     FILE* source = fopen(_source, "r");
     FILE* dest = fopen(_dest, "w");
     char lineBuffer[MAX_LINE_LEN];
-    
+
     if (source == NULL) {
-        fprintf(stderr, "Could not open \"%s\" for reading. Make sure it exists and has read permissions.\n", _source);
+        fprintf(stderr, "Error: Could not open \"%s\" for reading.\n", _source);
+        exit(EXIT_FAILURE);
+    }
+
+    if (dest == NULL) {
+        fprintf(stderr, "Error: Could not open \"%s\" for writing.\n", _dest);
+        fclose(source);
         exit(EXIT_FAILURE);
     }
 
     while (fgets(lineBuffer, MAX_LINE_LEN, source)) {
         preprocessString(lineBuffer);
 
+        // Skip empty lines
         if (lineBuffer[0] == '\0') {
             continue;
         }
