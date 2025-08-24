@@ -8,6 +8,7 @@
 #include "assembler.h"
 #include "parser.h"
 #include "string_ops.h"
+#include "pack32.h"
 
 /*
 Errors to check for:
@@ -22,28 +23,6 @@ Segmentation fault (invalid memory address)
 
 static uint32_t outputBin[PROGRAM_SIZE];
 static size_t outputLength = 0;
-
-/*
-32-bit encoding (opcode in lower bits)
-[31:16] payload (imm16, addr16, rt4)
-[15]    N/A (reserved)
-[14:11] rs (4 bits)
-[10:7]  rd (4 bits)
-[6]     i1 (1 if reg-imm or jump)
-[5:0]   opcode (6 bits)
-*/
-static uint32_t pack32(uint8_t op, uint8_t i, uint8_t rd, uint8_t rs, uint16_t upper16) {
-    return ((uint32_t)(upper16<<16))
-    | ((uint32_t)((rs&0xF)<<11))
-    | ((uint32_t)((rd&0xF)<<7))
-    | ((uint32_t)((i&0x1)<<6))
-    | ((uint32_t)((op&0x3F)));
-}
-
-/*   
-0000 0000 0000 0000 |  0  | 000 0 | 000 0 |  0  | 00 0000 |
-       imm 16       | N/A |  rs1  |  rd   |  i  |   op    |
-*/
 
 /*
 LI RD IMM   -> ADDI RD R0 IMM
@@ -103,7 +82,14 @@ static inline void emit32(uint32_t w) {
 }
 
 // opcode to imm policy lookup
-// 0 = unsigned, 1 = signed, 2 = shift4
+typedef struct {
+    uint8_t opcode;
+    char* mneuomic;
+    instr_kind_t kind;
+    int* imm_policy;
+} OpcodeInfo;
+
+
 static int lookupOpcode(const char* mn, uint8_t* op, instr_kind_t* i, int* p) {
     if      (!strcasecmp(mn, "ADD"))    { *op=OP_ADD; *i=RR,  *p=1; return 1; }
     else if (!strcasecmp(mn, "ADDI"))   { *op=OP_ADD; *i=RI,  *p=1; return 1; }
@@ -168,10 +154,14 @@ void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable)
             
             if (sscanf(buf, "%63[^:]: %15s %63s", label, dotword, value) == 3 && !strcmp(dotword, ".word")) {
                 int16_t u;
-                if (!parseU16(value, &u)) {
+                parseImm(value, &u, 0);
+
+                /*
+                if (u == NULL) {
                     fprintf(stderr, "Error: bad .word value %s\n", value);
                     exit(EXIT_FAILURE);
                 }
+                */
 
                 emit32((uint32_t)u);
                 continue;
@@ -212,9 +202,9 @@ void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable)
             
             uint8_t op;
             instr_kind_t i;
-            int p;
+            int policy;
             
-            if (!lookupOpcode(mn, &op, &i, &p)) {
+            if (!lookupOpcode(mn, &op, &i, &policy)) {
                 fprintf(stderr, "Error: unknown mneumonic %s\n", mn);
                 exit (EXIT_FAILURE);
             }
@@ -233,8 +223,7 @@ void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable)
                     parseReg(a2, &rs1);
                     parseReg(a3, &rs2);
 
-                    // printf("%s %s %s %s --> %#x %#x %#x %#x\n", mn, a1, a2, a3, op, rd, rs1, rs2);
-                    bin = pack32(op, 0, rd, rs1, rs2);
+                    bin = packRR(op, rd, rs1, rs2);
                     emit32(bin);
 
                     break;
@@ -244,15 +233,9 @@ void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable)
                     parseReg(a1, &rd);
                     parseReg(a2, &rs1);
 
-                    if (p) parseS16(a3, &imm);
-                    else parseU16(a3, &imm);
+                    parseImm(a3, &imm, policy);
 
-                    // force value to 4 bits for SH4
-                    if (p==2) imm = (int16_t)(imm & 0x3FFF);
-
-                    //printf("%s %s %s %s --> %#x %#x %#x %#hx\n", mn, a1, a2, a3, op, rd, rs1, imm);
-
-                    bin = pack32(op, 1, rd, rs1, (uint16_t)imm);
+                    bin = packRI(op, rd, rs1, imm);
                     emit32(bin);
 
                     break;
@@ -263,31 +246,33 @@ void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable)
                     // EX: LA R2 mmio -- where mmio is a .word in data section
                     parseReg(a1, &rd);
 
+                    // parse address?
+
                     // assume a2 contains raw address if label doesn't exist in symbol table
                     if ((imm = search(symbolTable, a2)) == -1) {
-                        parseU16(a2, &imm);
+                        parseImm(a2, &imm, policy);
                     }
 
                     // FIX ADDRESSING MODE REG-REG FOR MEM INSTRUCTIONS
                     // printf("%s %s %s --> %#x %#x %#hx\n", mn, a1, a2, op, rd, imm);
 
                     
-                    bin = pack32(op, 1, rd, 0, imm);
+                    bin = packMEM(op, rd, imm);
                     emit32(bin);
 
                     break;
 
                 case BR:
                     // EX: BLT R1 R2 endloop
-                    parseReg(a1, &rd);
-                    parseReg(a2, &rs1);
+                    parseReg(a1, &rs1);
+                    parseReg(a2, &rs2);
 
                     // assume a3 contains raw address if label doesn't exist in symbol table
                     if ((imm = search(symbolTable, a3)) == -1) {
-                        parseU16(a3, &imm);
+                        parseImm(a3, &imm, policy);
                     }
 
-                    bin = pack32(op, 1, rd, rs1, imm);
+                    bin = packBR(op, rs1, rs2, imm);
                     emit32(bin);
 
                     break;
@@ -298,16 +283,16 @@ void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable)
 
                     // assume a1 contains raw address if label doesn't exist in symbol table
                     if ((imm = search(symbolTable, a1)) == -1) {
-                        parseU16(a1, &imm);
+                        parseImm(a1, &imm, policy);
                     }
 
-                    bin = pack32(op, 0, 0, 0, imm);
+                    bin = packJ(op, imm);
                     emit32(bin);
 
                     break;
 
                 case HLT:
-                    bin = pack32(op, 0, 0, 0, 0);
+                    bin = packHLT(op);
                     emit32(bin);
 
                     break;

@@ -9,7 +9,8 @@ OBJS = build/assembler.o \
 	build/first_pass.o \
 	build/second_pass.o \
 	build/parser.o \
-	build/string_ops.o
+	build/string_ops.o \
+	build/pack32.o
 
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o $(BIN)
@@ -34,6 +35,9 @@ build/parser.o: src/parser.c src/parser.h
 
 build/string_ops.o: src/string_ops.c src/string_ops.h
 	$(CC) $(CFLAGS) -c src/string_ops.c -o build/string_ops.o
+
+build/pack32.o: src/pack32.c src/pack32.h
+	$(CC) $(CFLAGS) -c src/pack32.c -o build/pack32.o
 
 clean:
 	rm -f build/*.o $(BIN)
