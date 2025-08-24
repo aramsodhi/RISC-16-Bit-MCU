@@ -9,24 +9,16 @@
 #include "first_pass.h"
 #include "second_pass.h"
 
-static void runTests(void) {
-    if (!testParser()) {
-        fprintf(stderr, "Failure: parser.c\n");
-        exit(EXIT_FAILURE);
-    } else {
-        fprintf(stdout, "Success: parser.c\n");
-    }
-
-}
+typedef struct {
+    struct hashtable* symbolTable;
+    
+} Assembler;
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         fprintf(stderr, "No files to compile. Use: \"asm <file>.\".");
         exit(EXIT_FAILURE);
     }
-
-    // run unittests
-    runTests();
 
     preprocessFile(argv[1], "pre.asm");
     printf("Successfully preprocessed file\n");
