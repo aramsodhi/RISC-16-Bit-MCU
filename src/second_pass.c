@@ -9,11 +9,16 @@
 #include "parser.h"
 #include "string_ops.h"
 
+/*
+Errors to check for:
+Segmentation fault (invalid memory address)
+
+
+*/
+
+
 #define MAX_LINE_LEN 256
 #define PROGRAM_SIZE 1024
-
-#define TEXT_ADDR 0x0040
-#define DATA_ADDR 0x0FFF
 
 static uint32_t outputBin[PROGRAM_SIZE];
 static size_t outputLength = 0;
@@ -28,31 +33,16 @@ static size_t outputLength = 0;
 [5:0]   opcode (6 bits)
 */
 static uint32_t pack32(uint8_t op, uint8_t i, uint8_t rd, uint8_t rs, uint16_t upper16) {
-    return ((uint32_t) upper16 << 16)
-        | ((uint32_t)(rs & 0x0F) << 11)
-        | ((uint32_t)(rd & 0x0F) << 7)
-        | ((uint32_t)(i & 0x01) << 6)
-        | (uint32_t)(op & 0x3F);
+    return ((uint32_t)(upper16<<16))
+    | ((uint32_t)((rs&0xF)<<11))
+    | ((uint32_t)((rd&0xF)<<7))
+    | ((uint32_t)((i&0x1)<<6))
+    | ((uint32_t)((op&0x3F)));
 }
 
 /*   
 0000 0000 0000 0000 |  0  | 000 0 | 000 0 |  0  | 00 0000 |
        imm 16       | N/A |  rs1  |  rd   |  i  |   op    |
-*/
-
-/*
-static void printInstruction(uint32_t instr) {
-    uint8_t op = (uint8_t) instr & 0x3F;
-    uint8_t i = (uint8_t) (instr >> 6) & 0x01;
-    uint8_t rd = (uint8_t) (instr >> 7) & 0x0F;
-    uint8_t rs = (uint8_t) (instr >> 11) & 0x0F;
-    uint16_t imm = (uint16_t) (instr >> 16);
-    printf("op: %" PRIu8 \
-            " imm: %" PRIu8 \
-            " rd: %" PRIu8 \
-            " rs: %" PRIu8 \
-            " imm: %#x\n", op, i, rd, rs, imm);
-}
 */
 
 /*
@@ -83,8 +73,8 @@ static void lowerPseudo(char** mn, char** a1, char** a2, char** a3, char* bufmn,
     // NEG RD RS1 --> SUB RD R0 RS1
     if (!strcasecmp(*mn, "NEG")) {
         strcpy(bufmn, "SUB"); *mn = bufmn;
+        strcpy(bufa3, *a2); *a3 = bufa3;
         strcpy(bufa2, "R0"); *a2 = bufa2;
-        // shift rs?
     }
 
     // NOT RD RS1 --> XORI RD RS1 0xFFFF
@@ -113,17 +103,17 @@ static inline void emit32(uint32_t w) {
 }
 
 // opcode to imm policy lookup
-// 0 = signed, 1 = unsigned, 2 = shift4
+// 0 = unsigned, 1 = signed, 2 = shift4
 static int lookupOpcode(const char* mn, uint8_t* op, instr_kind_t* i, int* p) {
-    if      (!strcasecmp(mn, "ADD"))    { *op=OP_ADD; *i=RR,  *p=0; return 1; }
-    else if (!strcasecmp(mn, "ADDI"))   { *op=OP_ADD; *i=RI,  *p=0; return 1; }
-    else if (!strcasecmp(mn, "SUB"))    { *op=OP_SUB; *i=RR;  *p=0; return 1; }
-    else if (!strcasecmp(mn, "SUBI"))   { *op=OP_SUB; *i=RI;  *p=0; return 1; }
-    else if (!strcasecmp(mn, "AND"))    { *op=OP_AND; *i=RR;  *p=1; return 1; }
-    else if (!strcasecmp(mn, "ANDI"))   { *op=OP_AND; *i=RI;  *p=1; return 1; }
-    else if (!strcasecmp(mn, "OR"))     { *op=OP_OR;  *i=RR;  *p=1; return 1; }
-    else if (!strcasecmp(mn, "ORI"))    { *op=OP_OR;  *i=RR;  *p=1; return 1; }
-    else if (!strcasecmp(mn, "XOR"))    { *op=OP_XOR; *i=RI;  *p=0; return 1; }
+    if      (!strcasecmp(mn, "ADD"))    { *op=OP_ADD; *i=RR,  *p=1; return 1; }
+    else if (!strcasecmp(mn, "ADDI"))   { *op=OP_ADD; *i=RI,  *p=1; return 1; }
+    else if (!strcasecmp(mn, "SUB"))    { *op=OP_SUB; *i=RR;  *p=1; return 1; }
+    else if (!strcasecmp(mn, "SUBI"))   { *op=OP_SUB; *i=RI;  *p=1; return 1; }
+    else if (!strcasecmp(mn, "AND"))    { *op=OP_AND; *i=RR;  *p=0; return 1; }
+    else if (!strcasecmp(mn, "ANDI"))   { *op=OP_AND; *i=RI;  *p=0; return 1; }
+    else if (!strcasecmp(mn, "OR"))     { *op=OP_OR;  *i=RR;  *p=0; return 1; }
+    else if (!strcasecmp(mn, "ORI"))    { *op=OP_OR;  *i=RI;  *p=0; return 1; }
+    else if (!strcasecmp(mn, "XOR"))    { *op=OP_XOR; *i=RR;  *p=0; return 1; }
     else if (!strcasecmp(mn, "XORI"))   { *op=OP_XOR; *i=RI;  *p=0; return 1; }
     else if (!strcasecmp(mn, "SLL"))    { *op=OP_SLL; *i=RR;  *p=2; return 1; }
     else if (!strcasecmp(mn, "SLLI"))   { *op=OP_SLL; *i=RI;  *p=2; return 1; }
@@ -131,7 +121,7 @@ static int lookupOpcode(const char* mn, uint8_t* op, instr_kind_t* i, int* p) {
     else if (!strcasecmp(mn, "SRLI"))   { *op=OP_SRL; *i=RI;  *p=2; return 1; }
     else if (!strcasecmp(mn, "SRA"))    { *op=OP_SRA; *i=RR;  *p=2; return 1; }
     else if (!strcasecmp(mn, "SRAI"))   { *op=OP_SRA; *i=RI;  *p=2; return 1; }
-    else if (!strcasecmp(mn, "LW"))     { *op=OP_LW;  *i=MEM; *p=0; return 1; } // what imm polocy to use?
+    else if (!strcasecmp(mn, "LW"))     { *op=OP_LW;  *i=MEM; *p=0; return 1; }
     else if (!strcasecmp(mn, "SW"))     { *op=OP_SW;  *i=MEM; *p=0; return 1; }
     else if (!strcasecmp(mn, "LA"))     { *op=OP_LA;  *i=MEM; *p=0; return 1; }
     else if (!strcasecmp(mn, "J"))      { *op=OP_J;   *i=J;   *p=0; return 1; }
@@ -141,6 +131,22 @@ static int lookupOpcode(const char* mn, uint8_t* op, instr_kind_t* i, int* p) {
     else if (!strcasecmp(mn, "HLT"))    { *op=OP_HLT; *i=HLT; *p=0; return 1; }
     return 0;
     // what to do with imm variations?
+}
+
+
+void writeToBin(uint32_t outputBuffer[], FILE* output) {
+    uint32_t instr; 
+    uint8_t instrbuf[4];
+    for (int index = 0; index < outputLength; index++) {
+        instr = outputBuffer[index];
+        instrbuf[0] = (instr >> 24) & 0xFF;
+        instrbuf[1] = (instr >> 16) & 0xFF;
+        instrbuf[2] = (instr >> 8) & 0xFF;
+        instrbuf[3] = instr & 0xFF;
+
+        //printf("%#x\n", instr);
+        fwrite(&instrbuf, sizeof(uint8_t), 4, output);
+    }
 }
 
 void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable) {
@@ -227,9 +233,8 @@ void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable)
                     parseReg(a2, &rs1);
                     parseReg(a3, &rs2);
 
-                    printf("%s %s %s %s --> %#x %#x %#x %#x\n", mn, a1, a2, a3, op, rd, rs1, rs2);
-
-                    bin = pack32(op, 0, rd, rs1, (uint16_t)rs2);
+                    // printf("%s %s %s %s --> %#x %#x %#x %#x\n", mn, a1, a2, a3, op, rd, rs1, rs2);
+                    bin = pack32(op, 0, rd, rs1, rs2);
                     emit32(bin);
 
                     break;
@@ -245,7 +250,7 @@ void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable)
                     // force value to 4 bits for SH4
                     if (p==2) imm = (int16_t)(imm & 0x3FFF);
 
-                    printf("%s %s %s %s --> %#x %#x %#x %#hx\n", mn, a1, a2, a3, op, rd, rs1, imm);
+                    //printf("%s %s %s %s --> %#x %#x %#x %#hx\n", mn, a1, a2, a3, op, rd, rs1, imm);
 
                     bin = pack32(op, 1, rd, rs1, (uint16_t)imm);
                     emit32(bin);
@@ -264,8 +269,9 @@ void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable)
                     }
 
                     // FIX ADDRESSING MODE REG-REG FOR MEM INSTRUCTIONS
-                    printf("%s %s %s --> %#x %#x %#hx\n", mn, a1, a2, op, rd, imm);
+                    // printf("%s %s %s --> %#x %#x %#hx\n", mn, a1, a2, op, rd, imm);
 
+                    
                     bin = pack32(op, 1, rd, 0, imm);
                     emit32(bin);
 
@@ -313,27 +319,6 @@ void secondPass(FILE* preprocessed, FILE* output, struct hashTable* symbolTable)
         }
     }
 
-    // write to .bin file -- run unittest later
-    uint32_t instr; 
-    for (int index = 0; index < outputLength; index++) {
-        instr = outputBin[index];
-        fwrite(&instr, sizeof(uint32_t), 1, output);
-    }
+    // write to .bin file
+    writeToBin(outputBin, output);
 }
-
-
-/*
-// --------- TESTING ----------
-void testPack32(void) {
-    // test encoding of SUB R3 R1 R2
-    uint8_t op = 1;
-    uint8_t rd = 3;
-    uint8_t rs1 = 1;
-    uint8_t rs2 = 2;
-    uint32_t bin = pack32(op, 0, rd, rs1, (uint16_t)rs2);
-
-    printInstruction(bin);
-    printf("%x\n", bin);
-    // 0000 0000 0000 0010 0000 1001 1000 0001
-}
-*/

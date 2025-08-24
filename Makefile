@@ -37,6 +37,3 @@ build/string_ops.o: src/string_ops.c src/string_ops.h
 
 clean:
 	rm -f build/*.o $(BIN)
-
-run: ./build/asm
-	./build/asm ./demo/pid.asm
